@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f766e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Журнал</title>
+<style>
+:root{
+  --bg:#efeae2; --bar:#0f766e; --bar-text:#fff; --bubble:#d9fdd3; --text:#111b21; --muted:#667781;
+  --card:#fff; --line:rgba(0,0,0,.08); --danger:#d92d20; --accent:#0f766e;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#0b141a; --bar:#134e4a; --bubble:#005c4b; --text:#e9edef; --muted:#9aa8b0; --card:#1f2c34; --line:rgba(255,255,255,.1); --accent:#2dd4bf}
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:16px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+body{display:flex;flex-direction:column;height:100dvh;overflow:hidden}
+header{background:var(--bar);color:var(--bar-text);padding:calc(10px + env(safe-area-inset-top)) 14px 10px;display:flex;align-items:center;gap:10px}
+header h1{font-size:18px;margin:0;flex:1}
+header small{display:block;font-size:12px;opacity:.8;font-weight:400}
+header button{background:none;border:0;color:inherit;font-size:20px;padding:6px 8px}
+#feed{flex:1;overflow-y:auto;padding:12px 10px 16px;display:flex;flex-direction:column;gap:8px;-webkit-overflow-scrolling:touch}
+.day{align-self:center;background:var(--card);color:var(--muted);font-size:12px;padding:3px 10px;border-radius:10px;margin:6px 0;box-shadow:0 1px 1px var(--line)}
+.msg{align-self:flex-end;max-width:84%;background:var(--bubble);border-radius:12px 12px 2px 12px;padding:6px;box-shadow:0 1px 1px var(--line)}
+.msg img{display:block;width:100%;border-radius:8px;background:rgba(0,0,0,.08);min-height:80px}
+.msg .page{font-size:12px;font-weight:600;color:var(--accent);padding:2px 4px 4px}
+.msg .note{padding:6px 4px 0;white-space:pre-wrap;word-break:break-word}
+.msg .meta{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 4px 0;font-size:11px;color:var(--muted)}
+.msg .meta button{background:none;border:0;color:var(--muted);font-size:20px;line-height:1;padding:2px 6px}
+.empty{margin:auto;text-align:center;color:var(--muted);padding:30px}
+footer{background:var(--card);border-top:1px solid var(--line);padding:10px 12px calc(10px + env(safe-area-inset-bottom));display:flex;gap:10px}
+footer button{flex:1;border:0;border-radius:14px;padding:14px 8px;font-size:16px;font-weight:600;background:var(--accent);color:#fff}
+footer button.alt{background:transparent;color:var(--accent);border:2px solid var(--accent)}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:flex-end;justify-content:center;z-index:20}
+.overlay.on{display:flex}
+.sheet{background:var(--card);width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));max-height:92dvh;overflow:auto}
+.sheet h2{margin:0 0 6px;font-size:18px}
+.sheet p{margin:0 0 12px;color:var(--muted);font-size:14px}
+.sheet .btn{display:block;width:100%;border:0;border-radius:12px;padding:14px;font-size:16px;margin-top:8px;background:var(--accent);color:#fff;font-weight:600;text-align:left}
+.sheet .btn small{display:block;font-weight:400;opacity:.85;font-size:13px}
+.sheet .btn.sec{background:rgba(127,127,127,.15);color:var(--text)}
+.sheet .btn.danger{background:var(--danger);color:#fff}
+.sheet input,.sheet textarea{width:100%;font:inherit;color:var(--text);background:transparent;border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:6px}
+.sheet label{font-size:13px;color:var(--muted);display:block;margin-top:10px}
+.cmp{display:flex;gap:8px;margin:8px 0}
+.cmp figure{margin:0;flex:1;text-align:center;font-size:12px;color:var(--muted)}
+.cmp img{width:100%;height:150px;object-fit:cover;border-radius:8px;background:rgba(0,0,0,.1)}
+#viewer{position:fixed;inset:0;background:#000;z-index:30;display:none;flex-direction:column}
+#viewer.on{display:flex}
+#viewer .top{display:flex;justify-content:space-between;align-items:center;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;color:#fff;font-size:14px}
+#viewer .top button{background:none;border:0;color:#fff;font-size:24px;padding:4px 10px}
+#vwrap{flex:1;overflow:auto;touch-action:pan-x pan-y pinch-zoom;display:flex}
+#vimg{margin:auto;width:100%;max-width:none;height:auto}
+#vimg.zoom{width:250%}
+#toast{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:20px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:50;max-width:90%}
+#toast.on{opacity:1}
+#login,#setup{margin:auto;width:100%;max-width:360px;padding:24px}
+#login input{width:100%;font:inherit;padding:12px;margin-top:10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text)}
+#login button{width:100%;margin-top:14px;padding:14px;border:0;border-radius:12px;background:var(--accent);color:#fff;font-size:16px;font-weight:600}
+#err{color:var(--danger);font-size:14px;margin-top:10px;min-height:1em}
+.hidden{display:none!important}
+#busy{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;color:#fff;z-index:60;font-size:16px}
+#busy.on{display:flex}
+input[type=file]{display:none}
+</style>
+</head>
+<body>
+
+<div id="setup" class="hidden">
+  <h2>Нужна настройка Firebase</h2>
+  <p>Откройте <code>index.html</code> и впишите свои данные в <code>firebaseConfig</code> (см. инструкцию в начале скрипта).</p>
+</div>
+
+<div id="login" class="hidden">
+  <h2>Мой журнал</h2>
+  <div style="color:var(--muted);font-size:14px">Войдите своим email и паролем из Firebase Authentication</div>
+  <input id="email" type="email" placeholder="Email" autocomplete="username">
+  <input id="pass" type="password" placeholder="Пароль" autocomplete="current-password">
+  <button id="loginBtn">Войти</button>
+  <div id="err"></div>
+</div>
+
+<header id="appHeader" class="hidden">
+  <h1>Журнал <small id="count"></small></h1>
+  <button id="logout" title="Выйти" aria-label="Выйти">⎋</button>
+</header>
+<div id="feed" class="hidden"></div>
+<footer id="appFooter" class="hidden">
+  <button class="alt" id="btnGallery">🖼 Галерея</button>
+  <button id="btnCamera">📷 Камера</button>
+</footer>
+
+<input type="file" id="fileGallery" accept="image/*">
+<input type="file" id="fileCamera" accept="image/*" capture="environment">
+
+<div class="overlay" id="ov"><div class="sheet" id="sheet"></div></div>
+
+<div id="viewer">
+  <div class="top"><span id="vtitle"></span><button id="vclose" aria-label="Закрыть">✕</button></div>
+  <div id="vwrap"><img id="vimg" alt=""></div>
+</div>
+
+<div id="toast"></div>
+<div id="busy">Обработка…</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+/* =====================  НАСТРОЙКА FIREBASE  =====================
+ 1. console.firebase.google.com → создать проект → Build → Realtime Database → Create.
+ 2. Build → Authentication → Sign-in method → включить Email/Password → вкладка Users → Add user (ваш email + пароль).
+ 3. Project settings → Your apps → Web (</>) → скопировать firebaseConfig сюда.
+ 4. Realtime Database → Rules → вставить правила и нажать Publish:
+ {
+   "rules": {
+     "users": {
+       "$uid": {
+         ".read": "auth != null && auth.uid === $uid",
+         ".write": "auth != null && auth.uid === $uid",
+         "entries": { ".indexOn": ["createdAt"] }
+       }
+     }
+   }
+ }
+ 5. Выложить index.html на любой HTTPS-хостинг (Firebase Hosting, GitHub Pages, Netlify) и
+    открыть на телефоне → «Добавить на главный экран».
+ ================================================================ */
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyCLofkfmZXXu-36jAxg46e9y8ehuVzbZvs",
+  authDomain: "kvr-online.firebaseapp.com",
+  databaseURL: "https://kvr-online-default-rtdb.firebaseio.com",
+  projectId: "kvr-online",
+  storageBucket: "kvr-online.firebasestorage.app",
+  messagingSenderId: "826551776107",
+  appId: "1:826551776107:web:82a7e4cc7fa7640668922e"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+
+const $ = id => document.getElementById(id);
+const configured = !firebaseConfig.apiKey.startsWith("ВАШ");
+let userRef = null, entries = [], pendingReplaceId = null, viewerId = null;
+
+/* ---------- утилиты ---------- */
+const pad = n => String(n).padStart(2, "0");
+const fmtDate = ms => { const d = new Date(ms); return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()}`; };
+const fmtTime = ms => { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const fmtFull = ms => `${fmtDate(ms)} ${fmtTime(ms)}`;
+const toLocalInput = ms => { const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+function dayLabel(ms){
+  const t = new Date(); const d = new Date(ms);
+  const same = (a,b)=>a.toDateString()===b.toDateString();
+  const y = new Date(); y.setDate(t.getDate()-1);
+  if (same(d,t)) return "Сегодня"; if (same(d,y)) return "Вчера"; return fmtDate(ms);
+}
+let toastT;
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("on"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("on"),2500); }
+const busy = on => $("busy").classList.toggle("on", on);
+
+/* ---------- нижняя панель (диалоги) ---------- */
+function openSheet(build){
+  const s = $("sheet"); s.innerHTML = ""; build(s); $("ov").classList.add("on");
+}
+function closeSheet(){ $("ov").classList.remove("on"); }
+$("ov").addEventListener("click", e => { if (e.target === $("ov")) closeSheet(); });
+function el(tag, props = {}, ...kids){
+  const n = document.createElement(tag);
+  Object.entries(props).forEach(([k,v]) => k==="class" ? n.className=v : k.startsWith("on") ? n.addEventListener(k.slice(2),v) : n[k]=v);
+  kids.flat().forEach(k => n.append(k));
+  return n;
+}
+function btn(label, sub, cls, fn){
+  const b = el("button", {class:"btn "+(cls||""), onclick:fn}, label);
+  if (sub) b.append(el("small", {}, sub));
+  return b;
+}
+
+/* ---------- обработка изображений ---------- */
+async function loadBitmap(file){
+  if (window.createImageBitmap) {
+    try { return await createImageBitmap(file, {imageOrientation:"from-image"}); } catch(e){}
+  }
+  return await new Promise((res, rej) => {
+    const img = new Image(); const url = URL.createObjectURL(file);
+    img.onload = () => { res(img); }; img.onerror = rej; img.src = url;
+  });
+}
+function drawScaled(src, max, quality){
+  const w0 = src.width, h0 = src.height, k = Math.min(1, max / Math.max(w0, h0));
+  const c = document.createElement("canvas"); c.width = Math.round(w0*k); c.height = Math.round(h0*k);
+  c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+  return {url: c.toDataURL("image/jpeg", quality), w: c.width, h: c.height};
+}
+async function processFile(file){
+  busy(true);
+  try {
+    const bmp = await loadBitmap(file);
+    const full = drawScaled(bmp, 2000, 0.8);
+    const thumb = drawScaled(bmp, 520, 0.65);
+    return {full: full.url, thumb: thumb.url, w: full.w, h: full.h};
+  } finally { busy(false); }
+}
+
+/* ---------- операции с данными ---------- */
+async function addEntry(p){
+  const id = userRef.child("entries").push().key, now = Date.now();
+  await userRef.update({
+    [`entries/${id}`]: {createdAt: now, updatedAt: now, updateCount: 0, note: "", thumb: p.thumb, w: p.w, h: p.h},
+    [`full/${id}`]: p.full
+  });
+  toast("Добавлена новая страница");
+}
+async function replaceEntry(id, p){
+  const e = entries.find(x => x.id === id);
+  await userRef.update({
+    [`entries/${id}/thumb`]: p.thumb, [`entries/${id}/w`]: p.w, [`entries/${id}/h`]: p.h,
+    [`entries/${id}/updatedAt`]: Date.now(), [`entries/${id}/updateCount`]: ((e && e.updateCount) || 0) + 1,
+    [`full/${id}`]: p.full
+  });
+  toast("Фото заменено");
+}
+const saveNote = (id, note) => userRef.child(`entries/${id}/note`).set(note);
+const saveDate = (id, ms) => userRef.child(`entries/${id}/createdAt`).set(ms);
+async function deleteEntry(id){
+  await userRef.update({[`entries/${id}`]: null, [`full/${id}`]: null});
+  toast("Удалено");
+}
+
+/* ---------- загрузка файла ---------- */
+async function onFilePicked(file){
+  if (!file) return;
+  let p;
+  try { p = await processFile(file); } catch(e){ toast("Не удалось прочитать фото"); return; }
+
+  // замена конкретной записи из меню
+  if (pendingReplaceId) {
+    const id = pendingReplaceId; pendingReplaceId = null;
+    try { await replaceEntry(id, p); } catch(e){ toast("Ошибка: " + e.message); }
+    return;
+  }
+  const last = entries[entries.length - 1];
+  if (!last) { try { await addEntry(p); } catch(e){ toast("Ошибка: " + e.message); } return; }
+
+  openSheet(s => {
+    s.append(
+      el("h2", {}, "Что сделать с фото?"),
+      el("p", {}, "Последняя страница: №" + entries.length + ", загружена " + fmtFull(last.createdAt)),
+      el("div", {class:"cmp"},
+        el("figure", {}, el("img", {src:last.thumb}), "Последнее"),
+        el("figure", {}, el("img", {src:p.thumb}), "Новое")),
+      btn("🔄 Заменить последнее", "Страница дополнена, на ней добавились записи", "", async () => {
+        closeSheet(); try { await replaceEntry(last.id, p); } catch(e){ toast("Ошибка: " + e.message); }
+      }),
+      btn("➕ Новая страница", "Добавить как отдельное фото", "", async () => {
+        closeSheet(); try { await addEntry(p); } catch(e){ toast("Ошибка: " + e.message); }
+      }),
+      btn("Отмена", "", "sec", closeSheet)
+    );
+  });
+}
+["fileGallery","fileCamera"].forEach(id => {
+  $(id).addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; onFilePicked(f); });
+});
+$("btnGallery").onclick = () => { pendingReplaceId = null; $("fileGallery").click(); };
+$("btnCamera").onclick = () => { pendingReplaceId = null; $("fileCamera").click(); };
+
+/* ---------- меню записи ---------- */
+function openMenu(e){
+  openSheet(s => {
+    s.append(
+      el("h2", {}, "Страница №" + (entries.indexOf(e) + 1)),
+      el("p", {}, "Загружено: " + fmtFull(e.createdAt) + (e.updateCount ? `\nОбновлено: ${fmtFull(e.updatedAt)} (раз: ${e.updateCount})` : "")),
+      btn("🔍 Открыть", "", "sec", () => { closeSheet(); openViewer(e); }),
+      btn("✏️ Подпись", "Заметка к странице", "sec", () => editNote(e)),
+      btn("🕒 Изменить дату и время", "", "sec", () => editDate(e)),
+      btn("📷 Заменить фото (камера)", "", "sec", () => { closeSheet(); pendingReplaceId = e.id; $("fileCamera").click(); }),
+      btn("🖼 Заменить фото (галерея)", "", "sec", () => { closeSheet(); pendingReplaceId = e.id; $("fileGallery").click(); }),
+      btn("🗑 Удалить", "", "danger", () => confirmDelete(e)),
+      btn("Закрыть", "", "sec", closeSheet)
+    );
+  });
+}
+function editNote(e){
+  openSheet(s => {
+    const ta = el("textarea", {rows:4, value:e.note || "", placeholder:"Например: страница 12, конспект лекции"});
+    s.append(el("h2", {}, "Подпись"), ta,
+      btn("Сохранить", "", "", async () => { await saveNote(e.id, ta.value.trim()); closeSheet(); toast("Сохранено"); }),
+      btn("Отмена", "", "sec", closeSheet));
+    setTimeout(() => ta.focus(), 50);
+  });
+}
+function editDate(e){
+  openSheet(s => {
+    const inp = el("input", {type:"datetime-local", value: toLocalInput(e.createdAt)});
+    s.append(el("h2", {}, "Дата и время загрузки"), inp,
+      btn("Сохранить", "", "", async () => {
+        const ms = new Date(inp.value).getTime();
+        if (isNaN(ms)) { toast("Неверная дата"); return; }
+        await saveDate(e.id, ms); closeSheet(); toast("Дата изменена");
+      }),
+      btn("Отмена", "", "sec", closeSheet));
+  });
+}
+function confirmDelete(e){
+  openSheet(s => {
+    s.append(el("h2", {}, "Удалить страницу?"), el("p", {}, "Фото будет удалено без возможности восстановления."),
+      btn("Да, удалить", "", "danger", async () => { closeSheet(); try { await deleteEntry(e.id); } catch(x){ toast("Ошибка: " + x.message); } }),
+      btn("Отмена", "", "sec", closeSheet));
+  });
+}
+
+/* ---------- просмотр ---------- */
+async function openViewer(e){
+  viewerId = e.id;
+  $("vtitle").textContent = `Страница №${entries.indexOf(e)+1} · ${fmtFull(e.createdAt)}`;
+  const img = $("vimg"); img.classList.remove("zoom"); img.src = e.thumb;
+  $("viewer").classList.add("on");
+  try {
+    const snap = await userRef.child("full/" + e.id).once("value");
+    if (viewerId === e.id && snap.val()) img.src = snap.val();
+  } catch(x){ toast("Не удалось загрузить оригинал"); }
+}
+$("vimg").addEventListener("dblclick", () => $("vimg").classList.toggle("zoom"));
+$("vclose").onclick = () => { $("viewer").classList.remove("on"); viewerId = null; };
+
+/* ---------- отрисовка ленты ---------- */
+function render(){
+  const feed = $("feed"); const nearBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 150;
+  feed.innerHTML = "";
+  $("count").textContent = entries.length ? `страниц: ${entries.length}` : "";
+  if (!entries.length) { feed.append(el("div", {class:"empty"}, "Пока пусто.\nСфотографируйте страницу журнала или выберите фото из галереи.")); return; }
+  let lastDay = "";
+  entries.forEach((e, i) => {
+    const dl = dayLabel(e.createdAt);
+    if (dl !== lastDay) { feed.append(el("div", {class:"day"}, dl)); lastDay = dl; }
+    const img = el("img", {src:e.thumb, alt:"Страница " + (i+1), loading:"lazy", onclick:() => openViewer(e)});
+    if (e.w && e.h) img.style.aspectRatio = `${e.w} / ${e.h}`;
+    const meta = el("div", {class:"meta"},
+      el("span", {}, fmtTime(e.createdAt) + (e.updateCount ? ` · обновлено ${fmtDate(e.updatedAt) === fmtDate(e.createdAt) ? fmtTime(e.updatedAt) : fmtFull(e.updatedAt)}` : "")),
+      el("button", {onclick:() => openMenu(e), "aria-label":"Действия"}, "⋯"));
+    const m = el("div", {class:"msg"}, el("div", {class:"page"}, "Страница №" + (i+1)), img);
+    if (e.note) m.append(el("div", {class:"note"}, e.note));
+    m.append(meta);
+    feed.append(m);
+  });
+  if (nearBottom || !render.done) feed.scrollTop = feed.scrollHeight;
+  render.done = true;
+}
+
+/* ---------- старт / авторизация ---------- */
+function show(app){
+  ["appHeader","feed","appFooter"].forEach(id => $(id).classList.toggle("hidden", !app));
+  $("login").classList.toggle("hidden", app);
+}
+if (!configured) {
+  $("setup").classList.remove("hidden");
+} else {
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth(), db = firebase.database();
+  $("loginBtn").onclick = async () => {
+    $("err").textContent = "";
+    try { await auth.signInWithEmailAndPassword($("email").value.trim(), $("pass").value); }
+    catch(e){ $("err").textContent = "Не удалось войти: " + e.message; }
+  };
+  $("pass").addEventListener("keydown", e => { if (e.key === "Enter") $("loginBtn").click(); });
+  $("logout").onclick = () => auth.signOut();
+  let off = null;
+  auth.onAuthStateChanged(user => {
+    if (off) { off(); off = null; }
+    if (!user) { entries = []; userRef = null; show(false); $("login").classList.remove("hidden"); return; }
+    userRef = db.ref("users/" + user.uid);
+    show(true);
+    const q = userRef.child("entries").orderByChild("createdAt");
+    const cb = q.on("value", snap => {
+      const arr = [];
+      snap.forEach(ch => { arr.push({id: ch.key, ...ch.val()}); });
+      entries = arr; render();
+    }, err => toast("Нет доступа к базе: " + err.message));
+    off = () => q.off("value", cb);
+  });
+}
+</script>
+</body>
+</html>
