@@ -60,6 +60,7 @@ footer button.alt{background:transparent;color:var(--accent);border:2px solid va
 #login,#setup{margin:auto;width:100%;max-width:360px;padding:24px}
 #login input{width:100%;font:inherit;padding:12px;margin-top:10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text)}
 #login button{width:100%;margin-top:14px;padding:14px;border:0;border-radius:12px;background:var(--accent);color:#fff;font-size:16px;font-weight:600}
+#login button.sec{background:transparent;color:var(--accent);border:2px solid var(--accent)}
 #err{color:var(--danger);font-size:14px;margin-top:10px;min-height:1em}
 .hidden{display:none!important}
 #busy{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;color:#fff;z-index:60;font-size:16px}
@@ -76,16 +77,19 @@ input[type=file]{display:none}
 
 <div id="login" class="hidden">
   <h2>Мой журнал</h2>
-  <div style="color:var(--muted);font-size:14px">Войдите своим email и паролем из Firebase Authentication</div>
-  <input id="email" type="email" placeholder="Email" autocomplete="username">
-  <input id="pass" type="password" placeholder="Пароль" autocomplete="current-password">
-  <button id="loginBtn">Войти</button>
+  <div style="color:var(--muted);font-size:14px">Выберите, как войти</div>
+  <button id="guestBtn" class="sec">👁 Гость <span style="font-weight:400">(только просмотр)</span></button>
+  <button id="adminBtn">🔑 Админ</button>
+  <div id="adminBox" class="hidden">
+    <input id="pass" type="password" inputmode="numeric" placeholder="Пароль администратора" autocomplete="off">
+    <button id="okBtn">Войти</button>
+  </div>
   <div id="err"></div>
 </div>
 
 <header id="appHeader" class="hidden">
   <h1>Журнал <small id="count"></small></h1>
-  <button id="logout" title="Выйти" aria-label="Выйти">⎋</button>
+  <button id="logout" title="Сменить роль" aria-label="Сменить роль">⎋</button>
 </header>
 <div id="feed" class="hidden"></div>
 <footer id="appFooter" class="hidden">
@@ -107,34 +111,16 @@ input[type=file]{display:none}
 <div id="busy">Обработка…</div>
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script>
 /* =====================  НАСТРОЙКА FIREBASE  =====================
- 1. console.firebase.google.com → создать проект → Build → Realtime Database → Create.
- 2. Build → Authentication → Sign-in method → включить Email/Password → вкладка Users → Add user (ваш email + пароль).
- 3. Project settings → Your apps → Web (</>) → скопировать firebaseConfig сюда.
- 4. Realtime Database → Rules → вставить правила и нажать Publish:
- {
-   "rules": {
-     "users": {
-       "$uid": {
-         ".read": "auth != null && auth.uid === $uid",
-         ".write": "auth != null && auth.uid === $uid",
-         "entries": { ".indexOn": ["createdAt"] }
-       }
-     }
-   }
- }
- 5. Выложить index.html на любой HTTPS-хостинг (Firebase Hosting, GitHub Pages, Netlify) и
-    открыть на телефоне → «Добавить на главный экран».
+ Realtime Database → Rules (для работы с ролями «гость/админ» без входа Firebase):
+ { "rules": { ".read": true, ".write": true } }
+ ВАЖНО: пароль админа (ADMIN_PASS ниже) проверяется в браузере и виден в коде страницы,
+ а база при таких правилах открыта всем, кто знает её адрес. Это защита «от случайного
+ нажатия», а не настоящая безопасность. Для настоящей защиты нужен вход через Firebase Auth.
+ Выложите index.html на HTTPS-хостинг (камера работает только по HTTPS).
  ================================================================ */
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyCLofkfmZXXu-36jAxg46e9y8ehuVzbZvs",
   authDomain: "kvr-online.firebaseapp.com",
@@ -144,9 +130,6 @@ const firebaseConfig = {
   messagingSenderId: "826551776107",
   appId: "1:826551776107:web:82a7e4cc7fa7640668922e"
 };
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
 
 const $ = id => document.getElementById(id);
 const configured = !firebaseConfig.apiKey.startsWith("ВАШ");
@@ -206,8 +189,8 @@ async function processFile(file){
   busy(true);
   try {
     const bmp = await loadBitmap(file);
-    const full = drawScaled(bmp, 2000, 0.8);
-    const thumb = drawScaled(bmp, 520, 0.65);
+    const full = drawScaled(bmp, 1400, 0.7);
+    const thumb = drawScaled(bmp, 360, 0.6);
     return {full: full.url, thumb: thumb.url, w: full.w, h: full.h};
   } finally { busy(false); }
 }
@@ -239,7 +222,7 @@ async function deleteEntry(id){
 
 /* ---------- загрузка файла ---------- */
 async function onFilePicked(file){
-  if (!file) return;
+  if (!file || !isAdmin) return;
   let p;
   try { p = await processFile(file); } catch(e){ toast("Не удалось прочитать фото"); return; }
 
@@ -338,8 +321,8 @@ $("vclose").onclick = () => { $("viewer").classList.remove("on"); viewerId = nul
 function render(){
   const feed = $("feed"); const nearBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 150;
   feed.innerHTML = "";
-  $("count").textContent = entries.length ? `страниц: ${entries.length}` : "";
-  if (!entries.length) { feed.append(el("div", {class:"empty"}, "Пока пусто.\nСфотографируйте страницу журнала или выберите фото из галереи.")); return; }
+  $("count").textContent = (entries.length ? `страниц: ${entries.length} · ` : "") + (isAdmin ? "админ" : "гость");
+  if (!entries.length) { feed.append(el("div", {class:"empty"}, isAdmin ? "Пока пусто. Сфотографируйте страницу журнала или выберите фото из галереи." : "Пока пусто.")); return; }
   let lastDay = "";
   entries.forEach((e, i) => {
     const dl = dayLabel(e.createdAt);
@@ -347,8 +330,8 @@ function render(){
     const img = el("img", {src:e.thumb, alt:"Страница " + (i+1), loading:"lazy", onclick:() => openViewer(e)});
     if (e.w && e.h) img.style.aspectRatio = `${e.w} / ${e.h}`;
     const meta = el("div", {class:"meta"},
-      el("span", {}, fmtTime(e.createdAt) + (e.updateCount ? ` · обновлено ${fmtDate(e.updatedAt) === fmtDate(e.createdAt) ? fmtTime(e.updatedAt) : fmtFull(e.updatedAt)}` : "")),
-      el("button", {onclick:() => openMenu(e), "aria-label":"Действия"}, "⋯"));
+      el("span", {}, fmtFull(e.createdAt) + (e.updateCount ? ` · обновлено ${fmtFull(e.updatedAt)}` : "")),
+      isAdmin ? el("button", {onclick:() => openMenu(e), "aria-label":"Действия"}, "⋯") : "");
     const m = el("div", {class:"msg"}, el("div", {class:"page"}, "Страница №" + (i+1)), img);
     if (e.note) m.append(el("div", {class:"note"}, e.note));
     m.append(meta);
@@ -359,36 +342,50 @@ function render(){
 }
 
 /* ---------- старт / авторизация ---------- */
-function show(app){
-  ["appHeader","feed","appFooter"].forEach(id => $(id).classList.toggle("hidden", !app));
-  $("login").classList.toggle("hidden", app);
+const ADMIN_PASS = "8998";
+const DATA_PATH = "users/test";
+let isAdmin = false;
+const saveRole = r => { try { r ? localStorage.setItem("role", r) : localStorage.removeItem("role"); } catch(e){} };
+const loadRole = () => { try { return localStorage.getItem("role"); } catch(e){ return null; } };
+
+function showRoles(){
+  ["appHeader","feed","appFooter"].forEach(id => $(id).classList.add("hidden"));
+  $("login").classList.remove("hidden");
+  $("adminBox").classList.add("hidden"); $("pass").value = ""; $("err").textContent = "";
 }
+function enter(admin){
+  isAdmin = admin;
+  $("login").classList.add("hidden");
+  $("appHeader").classList.remove("hidden");
+  $("feed").classList.remove("hidden");
+  $("appFooter").classList.toggle("hidden", !admin);
+  render();
+  $("feed").scrollTop = $("feed").scrollHeight;
+}
+
 if (!configured) {
   $("setup").classList.remove("hidden");
 } else {
   firebase.initializeApp(firebaseConfig);
-  const auth = firebase.auth(), db = firebase.database();
-  $("loginBtn").onclick = async () => {
-    $("err").textContent = "";
-    try { await auth.signInWithEmailAndPassword($("email").value.trim(), $("pass").value); }
-    catch(e){ $("err").textContent = "Не удалось войти: " + e.message; }
+  userRef = firebase.database().ref(DATA_PATH);
+  userRef.child("entries").orderByChild("createdAt").on("value", snap => {
+    const arr = [];
+    snap.forEach(ch => { arr.push({id: ch.key, ...ch.val()}); });
+    entries = arr; render();
+  }, err => toast("Нет доступа к базе: " + err.message));
+
+  $("guestBtn").onclick = () => { saveRole("guest"); enter(false); };
+  $("adminBtn").onclick = () => { $("adminBox").classList.remove("hidden"); $("pass").focus(); };
+  const tryAdmin = () => {
+    if ($("pass").value === ADMIN_PASS) { saveRole("admin"); enter(true); }
+    else { $("err").textContent = "Неверный пароль"; $("pass").value = ""; }
   };
-  $("pass").addEventListener("keydown", e => { if (e.key === "Enter") $("loginBtn").click(); });
-  $("logout").onclick = () => auth.signOut();
-  let off = null;
-  auth.onAuthStateChanged(user => {
-    if (off) { off(); off = null; }
-    if (!user) { entries = []; userRef = null; show(false); $("login").classList.remove("hidden"); return; }
-    userRef = db.ref("users/" + user.uid);
-    show(true);
-    const q = userRef.child("entries").orderByChild("createdAt");
-    const cb = q.on("value", snap => {
-      const arr = [];
-      snap.forEach(ch => { arr.push({id: ch.key, ...ch.val()}); });
-      entries = arr; render();
-    }, err => toast("Нет доступа к базе: " + err.message));
-    off = () => q.off("value", cb);
-  });
+  $("okBtn").onclick = tryAdmin;
+  $("pass").addEventListener("keydown", e => { if (e.key === "Enter") tryAdmin(); });
+  $("logout").onclick = () => { saveRole(null); isAdmin = false; showRoles(); };
+
+  const r = loadRole();
+  if (r === "admin") enter(true); else if (r === "guest") enter(false); else showRoles();
 }
 </script>
 </body>
