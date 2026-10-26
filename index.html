@@ -179,22 +179,72 @@ async function loadBitmap(file){
     img.onload = () => { res(img); }; img.onerror = rej; img.src = url;
   });
 }
-function drawScaled(src, max, quality){
-  const w0 = src.width, h0 = src.height, k = Math.min(1, max / Math.max(w0, h0));
-  const c = document.createElement("canvas"); c.width = Math.round(w0*k); c.height = Math.round(h0*k);
-  c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
-  return {url: c.toDataURL("image/jpeg", quality), w: c.width, h: c.height};
+
+// Однократная проверка поддержки кодирования WebP в canvas (очень дешёвая).
+const WEBP_OK = (() => {
+  try {
+    const c = document.createElement("canvas"); c.width = c.height = 1;
+    return c.toDataURL("image/webp", 0.8).startsWith("data:image/webp");
+  } catch(e){ return false; }
+})();
+
+// Кодирует canvas в WebP (если поддерживается) или JPEG.
+// maxChars — мягкий лимит на длину base64-строки (≈ бинарный размер × 1.37).
+function encodeCanvas(canvas, quality, maxChars){
+  const mime = WEBP_OK ? "image/webp" : "image/jpeg";
+  let q = quality;
+  let url = canvas.toDataURL(mime, q);
+  while (maxChars && url.length > maxChars && q > 0.55){
+    q -= 0.08;
+    url = canvas.toDataURL(mime, q);
+  }
+  return url;
 }
+
+// Ступенчатое уменьшение (halving) — критично для резкости текста
+// и отсутствия «муара» при сильном даунскейле.
+function drawScaled(src, max, quality, maxChars){
+  const w0 = src.width, h0 = src.height;
+  const k = Math.min(1, max / Math.max(w0, h0));
+  const tw = Math.max(1, Math.round(w0 * k));
+  const th = Math.max(1, Math.round(h0 * k));
+
+  let cur = src, curW = w0, curH = h0;
+  while (curW / 2 >= tw && curH / 2 >= th){
+    const nw = Math.round(curW / 2), nh = Math.round(curH / 2);
+    const cc = document.createElement("canvas");
+    cc.width = nw; cc.height = nh;
+    const cx = cc.getContext("2d");
+    cx.imageSmoothingEnabled = true;
+    cx.imageSmoothingQuality = "high";
+    cx.drawImage(cur, 0, 0, nw, nh);
+    cur = cc; curW = nw; curH = nh;
+  }
+
+  const c = document.createElement("canvas");
+  c.width = tw; c.height = th;
+  const ctx = c.getContext("2d");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(cur, 0, 0, tw, th);
+
+  return { url: encodeCanvas(c, quality, maxChars), w: tw, h: th };
+}
+
 async function processFile(file){
   busy(true);
   try {
     const bmp = await loadBitmap(file);
-    const full = drawScaled(bmp, 1400, 0.7);
-    const thumb = drawScaled(bmp, 360, 0.6);
-    return {full: full.url, thumb: thumb.url, w: full.w, h: full.h};
+    // Полная версия: 2000 px по длинной стороне — текст журнала читается,
+    // WebP q0.85 ≈ как JPEG q0.92 визуально, но заметно легче.
+    // maxChars ≈ 900 КБ base64 (≈ 660 КБ бинарных) — страховка на случай
+    // очень детальных фото.
+    const full  = drawScaled(bmp, 2000, 0.85, 900 * 1024);
+    // Превью: 640 px — чётко на retina в ленте, вес небольшой.
+    const thumb = drawScaled(bmp, 640,  0.80);
+    return { full: full.url, thumb: thumb.url, w: full.w, h: full.h };
   } finally { busy(false); }
 }
-
 /* ---------- операции с данными ---------- */
 async function addEntry(p){
   const id = userRef.child("entries").push().key, now = Date.now();
